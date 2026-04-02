@@ -51,3 +51,68 @@ ALTER TABLE demo_view3 ADD CONSTRAINT unique_name UNIQUE(email)
 #==== drop unique constraint (unique constraint drop with help of index )(index and constraint name )
 ALTER TABLE demo_view3 DROP INDEX unique_name;
 
+### =============prectice on window function and logical deletion ============== ###
+
+CREATE TABLE name_combination (
+id INT AUTO_INCREMENT PRIMARY KEY,
+last_name VARCHAR(120),
+first_name VARCHAR(120),
+extra_key VARCHAR(150),
+STATUS VARCHAR(100) DEFAULT "pending",
+INDEX index_on_last_frist_name (last_name,first_name),
+CONSTRAINT unique_name UNIQUE (last_name,first_name,extra_key)
+)ENGINE=INNODB CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+#insert data in extra key based on some find words
+INSERT INTO `name_combination` (`extra_key`) SELECT TRIM(SUBSTRING_INDEX(case_name,"In Re: ",-1)) FROM `case_type_entry_table` WHERE LOCATE("In Re: ",case_name)>0;
+INSERT INTO `name_combination` (`extra_key`) SELECT TRIM(SUBSTRING_INDEX(case_name,"vs. ",-1)) FROM `case_type_entry_table` WHERE LOCATE("vs. ",case_name)>0;
+INSERT INTO `name_combination` (`extra_key`) SELECT TRIM(SUBSTRING_INDEX(case_name,"vs ",-1)) FROM `case_type_entry_table` WHERE LOCATE("vs ",case_name)>0;
+
+#updating extra charectors that not usefull in searching
+SELECT * FROM `name_combination` WHERE extra_key LIKE "%, et al%";
+
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key," et al","") WHERE extra_key LIKE "% et al%";
+
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key,", Inc.","") WHERE extra_key LIKE "%, Inc.%";
+
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key,", INC","") WHERE extra_key LIKE "%, INC%";
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key,", Sr.","") WHERE extra_key LIKE "%, Sr.%";
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key," Jr","") WHERE extra_key LIKE "% Jr%";
+ROLLBACK;
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key,", III","") WHERE extra_key LIKE "%, III%";
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key,",","") WHERE extra_key LIKE "%,%";
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key," Living Trust dated March 21 1991","") WHERE extra_key LIKE "% Living Trust dated March 21 1991%";
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key," Inc.","") WHERE extra_key LIKE "% Inc.%";
+UPDATE name_combination SET extra_key = REGEXP_REPLACE(extra_key," Co.","") WHERE extra_key LIKE "% Co.%";
+
+#deleting not working records menually
+DELETE FROM `name_combination` WHERE extra_key IN ("TOYOTA MOTOR SALES U.S.A.","Konocti Unified School District","DOE 1","All Terrain Motors",
+"BB Opco LLC","INTERNAL REVENUE SERVICE a bureau of the United States Department of the Treasury",
+"Clear Lake Riviera Community Association dba Kelseyville Riviera Community Association","Sutter Lakeside Hospital",
+"State of California by and through the Department of California Highway Patrol","County of Lake.","Allstate Insurance Company"
+);
+
+#duplicate remove section
+SELECT COUNT(*), extra_key FROM name_combination GROUP BY extra_key HAVING COUNT(extra_key)>1;
+
+#understandig of window function 
+SELECT *, ROW_NUMBER() OVER (PARTITION BY extra_key ORDER BY id) AS rn;
+
+#selectiong value from partition and filtering
+SELECT * FROM (
+SELECT *, ROW_NUMBER() OVER (PARTITION BY extra_key ORDER BY id) AS rn FROM name_combination) table_1 WHERE table_1.rn > 1;
+
+#sub query deletion 
+DELETE FROM name_combination WHERE id IN (
+SELECT id FROM (
+SELECT *, ROW_NUMBER() OVER (PARTITION BY extra_key ORDER BY id) AS rn FROM name_combination) table_1 WHERE table_1.rn > 1);
+
+
+#join deletion
+DELETE n FROM name_combination n JOIN(
+SELECT id, ROW_NUMBER() OVER (PARTITION BY extra_key ORDER BY id) AS rn FROM name_combination
+) x1 ON n.id = x1.id WHERE x1.rn >1;
+
+
+#partition in frist_name and last name
+SELECT TRIM(SUBSTRING_INDEX(extra_key," ",1)) AS left_part, 
+       TRIM(SUBSTRING_INDEX(extra_key," ",-1)) AS right_part FROM name_combination;
